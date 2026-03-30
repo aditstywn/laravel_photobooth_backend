@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('photo_template');
             $table->string('gif_vidio')->nullable();
             $table->string('download_token')->unique()->nullable();
+            $table->timestamp('expired_at')->nullable();
             $table->timestamps();
         });
     }

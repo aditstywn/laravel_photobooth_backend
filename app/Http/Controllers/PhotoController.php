@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\DeletePhotoJob;
 use App\Models\Photo;
 use App\Models\PhotoResult;
 use Illuminate\Http\Request;
@@ -276,9 +277,16 @@ class PhotoController extends Controller
 
     public function download($token)
     {
+
+
         $photo = Photo::with('photoResults')
             ->where('download_token', $token)
             ->firstOrFail();
+
+
+        if ($photo->expired_at && now()->greaterThan($photo->expired_at)) {
+            abort(404, 'QR sudah expired');
+        }
 
         $zipFileName = 'boothera_'.$photo->id.'.zip';
         $zipPath = storage_path('app/public/'.$zipFileName);
@@ -317,6 +325,10 @@ class PhotoController extends Controller
     {
         $photo = Photo::where('download_token', $token)->firstOrFail();
 
+        if ($photo->expired_at && now()->greaterThan($photo->expired_at)) {
+            abort(404, 'QR sudah expired');
+        }
+
         if (!$photo->gif_vidio || !Storage::disk('public')->exists($photo->gif_vidio)) {
             return response()->json([
                 'message' => 'video tidak ditemukan',
@@ -330,10 +342,27 @@ class PhotoController extends Controller
 
     public function qr($token)
     {
+
+        $photo = Photo::where('download_token', $token)->firstOrFail();
+
+        if (!$photo->expired_at) {
+
+            $expired = now()->addHours(2);
+
+            $photo->update([
+                'expired_at' => $expired
+            ]);
+
+            DeletePhotoJob::dispatch($photo->id)->delay($expired);
+        }
+
         $url = url('/api/download/'.$token);
 
         return response()->json([
             'message' => 'QR foto berhasil dibuat',
+            'expired_at' => optional($photo->expired_at)
+                ?->timezone('Asia/Jakarta')
+                ?->format('Y-m-d H:i:s'),
             'download_url' => $url,
             'qr_image_url' => url('/api/download/'.$token.'/qr-image'),
         ]);

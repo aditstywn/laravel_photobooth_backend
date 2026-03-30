@@ -13,6 +13,10 @@ class Photo extends Model
 
     protected $guarded = ['id'];
 
+    protected $casts = [
+        'expired_at' => 'datetime',
+    ];
+
     protected $appends = ['photo_template_url', 'gif_vidio_url'];
 
     protected function photoTemplateUrl(): Attribute
