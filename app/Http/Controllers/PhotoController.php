@@ -14,6 +14,53 @@ use ZipArchive;
 
 class PhotoController extends Controller
 {
+    protected function buildDownloadItems(Photo $photo): array
+    {
+        $items = [];
+
+        if ($photo->photo_template) {
+            $items[] = [
+                'key' => 'template',
+                'type' => 'template',
+                'label' => 'Template Foto',
+                'name' => basename($photo->photo_template),
+                'url' => $photo->photo_template_url,
+                'download_name' => basename($photo->photo_template),
+                'download_url' => '/download/' . $photo->download_token . '/item/template',
+            ];
+        }
+
+        foreach ($photo->photoResults as $result) {
+            if (!$result->photo_ori) {
+                continue;
+            }
+
+            $items[] = [
+                'key' => 'photo-' . $result->id,
+                'type' => 'photo',
+                'label' => 'Foto Hasil ' . $result->photo_order,
+                'name' => basename($result->photo_ori),
+                'url' => $result->photo_ori_url,
+                'download_name' => basename($result->photo_ori),
+                'download_url' => '/download/' . $photo->download_token . '/item/photo/' . $result->id,
+            ];
+        }
+
+        if ($photo->gif_vidio) {
+            $items[] = [
+                'key' => 'video',
+                'type' => 'video',
+                'label' => 'Video / GIF',
+                'name' => basename($photo->gif_vidio),
+                'url' => $photo->gif_vidio_url,
+                'download_name' => basename($photo->gif_vidio),
+                'download_url' => '/download/' . $photo->download_token . '/item/video',
+            ];
+        }
+
+        return $items;
+    }
+
     protected function formatBytes(int $bytes): string
     {
         if ($bytes < 1024) {
@@ -275,7 +322,25 @@ class PhotoController extends Controller
     }
 
 
-    public function download($token)
+    public function downloadPortal($token)
+    {
+        $photo = Photo::with('photoResults')
+            ->where('download_token', $token)
+            ->firstOrFail();
+
+        if ($photo->expired_at && now()->greaterThan($photo->expired_at)) {
+            abort(404, 'QR sudah expired');
+        }
+
+
+        return response()->view('downloads.portal', [
+            'photo' => $photo,
+            'downloadItems' => $this->buildDownloadItems($photo),
+            'archiveUrl' => '/api/download/' . $token . '/zip',
+        ]);
+    }
+
+    public function downloadArchive($token)
     {
 
 
@@ -288,7 +353,7 @@ class PhotoController extends Controller
             abort(404, 'QR sudah expired');
         }
 
-        $zipFileName = 'boothera_'.$photo->id.'.zip';
+        $zipFileName = 'boothera'.'.zip';
         $zipPath = storage_path('app/public/'.$zipFileName);
 
         $zip = new ZipArchive;
@@ -321,6 +386,34 @@ class PhotoController extends Controller
         return response()->download($zipPath)->deleteFileAfterSend(true);
     }
 
+    public function downloadItem(string $token, string $type, ?PhotoResult $photoResult = null)
+    {
+        $photo = Photo::with('photoResults')
+            ->where('download_token', $token)
+            ->firstOrFail();
+
+        if ($photo->expired_at && now()->greaterThan($photo->expired_at)) {
+            abort(404, 'QR sudah expired');
+        }
+
+        $disk = Storage::disk('public');
+
+        $path = match ($type) {
+            'template' => $photo->photo_template,
+            'video' => $photo->gif_vidio,
+            'photo' => $photoResult?->photo_id === $photo->id ? $photoResult->photo_ori : null,
+            default => null,
+        };
+
+        if (!$path || !$disk->exists($path)) {
+            return response()->json([
+                'message' => 'file tidak ditemukan',
+            ], 404);
+        }
+
+        return response()->download($disk->path($path), basename($path));
+    }
+
     public function downloadVideo($token)
     {
         $photo = Photo::where('download_token', $token)->firstOrFail();
@@ -347,7 +440,7 @@ class PhotoController extends Controller
 
         if (!$photo->expired_at) {
 
-            $expired = now()->addHours(2);
+            $expired = now()->addHours(1);
 
             $photo->update([
                 'expired_at' => $expired
@@ -356,7 +449,7 @@ class PhotoController extends Controller
             DeletePhotoJob::dispatch($photo->id)->delay($expired);
         }
 
-        $url = url('/api/download/'.$token);
+        $url = url('/download/' . $token);
 
         return response()->json([
             'message' => 'QR foto berhasil dibuat',
@@ -370,7 +463,7 @@ class PhotoController extends Controller
 
     public function qrImage($token)
     {
-        $url = url('/api/download/'.$token);
+        $url = url('/download/' . $token);
 
         $qr = QrCode::format('svg')
             ->size(400)
@@ -389,7 +482,7 @@ class PhotoController extends Controller
             ], 404);
         }
 
-        $url = url('/api/download/'.$token.'/video');
+        $url = url('/download/' . $token);
 
         return response()->json([
             'message' => 'QR video berhasil dibuat',

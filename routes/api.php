@@ -11,7 +11,7 @@ Route::get('/user', function (Request $request) {
 Route::get('/photos/storage-stats', [PhotoController::class, 'storageStats']);
 Route::delete('/photos/destroy-all', [PhotoController::class, 'destroyAll']);
 Route::apiResource('photos', PhotoController::class);
-Route::get('/download/{token}', [PhotoController::class, 'download']);
+Route::get('/download/{token}/zip', [PhotoController::class, 'downloadArchive']);
 Route::get('/download/{token}/qr', [PhotoController::class, 'qr']);
 Route::get('/download/{token}/qr-image', [PhotoController::class, 'qrImage']);
 
